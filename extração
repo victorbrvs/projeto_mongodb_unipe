@@ -1,0 +1,120 @@
+//DEFININDO FORMATO DE DADOS
+
+SET ThousandSep='.';
+SET DecimalSep=',';
+SET MoneyThousandSep='.';
+SET MoneyDecimalSep=',';
+SET MoneyFormat='R$#.##0,00;-R$#.##0,00';
+SET TimeFormat='hh:mm:ss';
+SET DateFormat='DD/MM/YYYY';
+SET TimestampFormat='DD/MM/YYYY hh:mm:ss[.fff]';
+SET FirstWeekDay=6;
+SET BrokenWeeks=1;
+SET ReferenceDay=0;
+SET FirstMonthOfYear=1;
+SET CollationLocale='pt-BR';
+SET CreateSearchIndexOnReload=1;
+SET MonthNames='Jan;Fev;Mar;Abr;Mai;Jun;Jul;Ago;Set;Out;Nov;Dez';
+SET LongMonthNames='Janeiro;Fevereiro;Março;Abril;Maio;Junho;Julho;Agosto;Setembro;Outubro;Novembro;Dezembro';
+SET DayNames='Seg;Ter;Qua;Qui;Sex;Sáb;Dom';
+SET LongDayNames='Segunda-feira;Terça-feira;Quarta-feira;Quinta-feira;Sexta-feira;Sábado;Domingo';
+SET NumericalAbbreviation='3:k;6:M;9:G;12:T;15:P;18:E;21:Z;24:Y;-3:m;-6:μ;-9:n;-12:p;-15:f;-18:a;-21:z;-24:y';
+
+//DEFININDO VARIÁVEIS DE DIRETÓRIO
+
+SET vDirPainel = '[lib://DataFiles/Victor/ProjetoMongoDB]';
+SET vExt = '[lib://MongoDB_mongodb+srvvictorbarretostdtt3hAhJH3Cn98pAjG@cluster0.bpgt4rp.mongodb.net/credit_card]';
+
+//CONECTANDO AO MONGODB (CONEXÃO PREVIAMENTE CONFIGURADA)
+LIB CONNECT TO 'MongoDB_mongodb+srvvictorbarretostdtt3hAhJH3Cn98pAjG@cluster0.bpgt4rp.mongodb.net';
+
+//EXTRAINDO DADOS
+DOMINIO:
+LOAD *
+FROM $(vExt)/DOMINIO (qvx);
+//QVX é um formato de dados que permite o Qlik interpretar os metadados fornecidos e organizar os dados em colunas
+
+STORE DOMINIO INTO $(vDirPainel)/EXTRACAO/DOMINIO.QVD (QVD);
+DROP TABLE DOMINIO;
+
+CLIENTE:
+LOAD *
+FROM $(vExt)/CLIENTE (qvx);
+
+STORE CLIENTE INTO $(vDirPainel)/EXTRACAO/CLIENTE.QVD (QVD);
+DROP TABLE CLIENTE;
+
+CARTAO:
+LOAD *
+FROM $(vExt)/CARTAO (qvx);
+
+STORE CARTAO INTO $(vDirPainel)/EXTRACAO/CARTAO.QVD (QVD);
+DROP TABLE CARTAO;
+
+VENDA:
+LOAD *
+FROM $(vExt)/VENDA (qvx);
+
+STORE VENDA INTO $(vDirPainel)/EXTRACAO/VENDA.QVD (QVD);
+DROP TABLE VENDA;
+
+BLOQ_CARTAO:
+LOAD *
+FROM $(vExt)/BLOQ_CARTAO (qvx);
+
+STORE BLOQ_CARTAO INTO $(vDirPainel)/EXTRACAO/BLOQ_CARTAO.QVD (QVD);
+DROP TABLE BLOQ_CARTAO;
+
+BLOQ_CLIENTE:
+LOAD *
+FROM $(vExt)/BLOQ_CLIENTE (qvx);
+
+STORE BLOQ_CLIENTE INTO $(vDirPainel)/EXTRACAO/BLOQ_CLIENTE.QVD (QVD);
+DROP TABLE BLOQ_CLIENTE;
+
+PGT_FATURA:
+LOAD *
+FROM $(vExt)/PGT_FATURA (qvx);
+
+STORE PGT_FATURA INTO $(vDirPainel)/EXTRACAO/PGT_FATURA.QVD (QVD);
+DROP TABLE PGT_FATURA;
+
+TP_BLOQ_CARTAO:
+LOAD *
+FROM $(vExt)/TP_BLOQ_CARTAO (qvx);
+
+STORE TP_BLOQ_CARTAO INTO $(vDirPainel)/EXTRACAO/TP_BLOQ_CARTAO.QVD (QVD);
+DROP TABLE TP_BLOQ_CARTAO;
+
+TP_BLOQ_CLIENTE:
+LOAD *
+FROM $(vExt)/TP_BLOQ_CLIENTE (qvx);
+
+STORE TP_BLOQ_CLIENTE INTO $(vDirPainel)/EXTRACAO/TP_BLOQ_CLIENTE.QVD (QVD);
+DROP TABLE TP_BLOQ_CLIENTE;
+
+REDE:
+LOAD *
+FROM $(vExt)/REDE (qvx);
+
+STORE REDE INTO $(vDirPainel)/EXTRACAO/REDE.QVD (QVD);
+DROP TABLE REDE;
+
+FATURA:
+LOAD *
+FROM $(vExt)/FATURA (qvx);
+
+STORE FATURA INTO $(vDirPainel)/EXTRACAO/FATURA.QVD (QVD);
+DROP TABLE FATURA;
+
+//Criando um calendário para servir de dimensão-tempo
+LET vDataIni = Num(Date#('01/01/1900','dd/MM/yyyy'));
+LET vDataFim = Num(TODAY(1));
+LET vPeriodo = '$(vDataFim)'-'$(vDataIni)';
+
+CALENDARIO:
+LOAD Date($(vDataIni) + RowNo()) as DATA
+AutoGenerate $(vPeriodo);
+
+STORE CALENDARIO INTO $(vDirPainel)/EXTRACAO/CALENDARIO.QVD (QVD);
+DROP TABLE CALENDARIO;
