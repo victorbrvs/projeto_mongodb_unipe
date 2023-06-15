@@ -1,0 +1,459 @@
+SET ThousandSep='.';
+SET DecimalSep=',';
+SET MoneyThousandSep='.';
+SET MoneyDecimalSep=',';
+SET MoneyFormat='R$#.##0,00;-R$#.##0,00';
+SET TimeFormat='hh:mm:ss';
+SET DateFormat='DD/MM/YYYY';
+SET TimestampFormat='DD/MM/YYYY hh:mm:ss[.fff]';
+SET FirstWeekDay=6;
+SET BrokenWeeks=1;
+SET ReferenceDay=0;
+SET FirstMonthOfYear=1;
+SET CollationLocale='pt-BR';
+SET CreateSearchIndexOnReload=1;
+SET MonthNames='Jan;Fev;Mar;Abr;Mai;Jun;Jul;Ago;Set;Out;Nov;Dez';
+SET LongMonthNames='Janeiro;Fevereiro;Março;Abril;Maio;Junho;Julho;Agosto;Setembro;Outubro;Novembro;Dezembro';
+SET DayNames='Seg;Ter;Qua;Qui;Sex;Sáb;Dom';
+SET LongDayNames='Segunda-feira;Terça-feira;Quarta-feira;Quinta-feira;Sexta-feira;Sábado;Domingo';
+SET NumericalAbbreviation='3:k;6:M;9:G;12:T;15:P;18:E;21:Z;24:Y;-3:m;-6:μ;-9:n;-12:p;-15:f;-18:a;-21:z;-24:y';
+
+SET vDirPainel = '[lib://DataFiles/Victor/ProjetoMongoDB]';
+
+///$tab 1. Domínio
+
+//tabela que contém informações dos campos FL (flag)
+DOMINIO:
+LOAD id_dominio,
+	 nm_dominio,
+	 cd_dominio,
+	 vl_dominio
+FROM $(vDirPainel)/EXTRACAO/DOMINIO.QVD (QVD);
+STORE DOMINIO INTO $(vDirPainel)/TRANSFORMACAO/DOMINIO.QVD (QVD);
+DROP TABLE DOMINIO;
+
+///$tab 2. Fatura
+
+FATURA:
+LOAD id_fatura           AS ID_FATURA,
+	 id_processamento    AS ID_PROCESSAMENTO,
+	 id_cliente          AS ID_CLIENTE,
+	 fl_ativa            AS FL_ATIVA,
+	 dt_vencimento       AS [Vencimento fatura],
+	 vl_minimo_pagamento AS [Valor mínimo pgt],
+	 vl_fatura           AS [Valor fatura]
+FROM $(vDirPainel)/EXTRACAO/FATURA.QVD (QVD);
+STORE FATURA INTO $(vDirPainel)/TRANSFORMACAO/FATURA.QVD (QVD);
+DROP TABLE FATURA;
+
+///$tab 3. Venda
+
+VENDA:
+LOAD id_venda                AS ID_VENDA,
+	 id_cliente              AS ID_CLIENTE,
+	 id_cartao               AS ID_CARTAO,
+	 id_forma_pagamento      AS ID_FORMA_PAGAMENTO,
+	 id_rede                 AS ID_REDE,
+	 id_rede_cancelamento    AS ID_REDE_CANCELAMENTO,
+	 id_usuario              AS ID_USUARIO,
+	 id_usuario_cancelamento AS ID_USUARIO_CANCELAMENTO,
+	 dt_venda                AS [Data venda],
+	 dt_cancelamento         AS [Data cancelamento],
+	 fl_status_venda         AS FL_STATUS_VENDA,
+	 vl_principal            AS [Valor principal venda],
+	 vl_juros                AS [Valor juros],
+	 vl_venda                AS [Valor venda]
+FROM $(vDirPainel)/EXTRACAO/VENDA.QVD (QVD)
+WHERE NOT isNULL(dt_venda);
+
+//traz informação da tabela DOMÍNIO, que dá valores aos campos de FL (flag)
+LEFT JOIN (VENDA)
+LOAD cd_dominio AS FL_STATUS_VENDA,
+	 vl_dominio AS [Situação VENDA]
+FROM $(vDirPainel)/TRANSFORMACAO/DOMINIO.QVD (QVD)
+WHERE nm_dominio = 'FL_STATUS_VENDA';
+
+/*obtém o valor da data da última venda realizada e armazena numa variável, 
+que será usada pra calcular os clientes sem compras nos últimos 90 dias, 
+considerando "hoje" como a última venda da base, já que é uma base estática*/
+ULT_DATA_VENDA:
+LOAD DATE(MAX(FLOOR([Data venda]))) AS DAT_MAX_VENDA
+RESIDENT VENDA;
+
+LET vDatMaxVenda = PEEK('DAT_MAX_VENDA');
+TRACE vDatMaxVenda $(vDatMaxVenda);
+
+DROP TABLE ULT_DATA_VENDA;
+
+STORE VENDA INTO $(vDirPainel)/TRANSFORMACAO/VENDA.QVD (QVD);
+DROP TABLE VENDA;
+
+///$tab 4. Tipo bloqueio cartão
+
+TP_BLOQ_CARTAO:
+LOAD id_tipo_bloqueio_cartao AS ID_TP_BLOQ_CARTAO,
+	 ds_tipo_bloqueio_cartao AS [Descrição tp bloq cartão]
+FROM $(vDirPainel)/EXTRACAO/TP_BLOQ_CARTAO.QVD (QVD);
+STORE TP_BLOQ_CARTAO INTO $(vDirPainel)/TRANSFORMACAO/TP_BLOQ_CARTAO.QVD (QVD);
+DROP TABLE TP_BLOQ_CARTAO;
+
+///$tab 5. Bloqueio cartão
+
+BLOQ_CARTAO:
+LOAD id_bloqueio_cartao      AS ID_BLOQ_CARTAO,
+     id_tipo_bloqueio_cartao AS ID_TP_BLOQ_CARTAO,
+	 id_cartao               AS ID_CARTAO,
+	 fl_liberado             AS FL_LIBERADO_CA,
+	 dt_bloqueio             AS [Data bloq ca],
+	 dt_desbloqueio          AS [Data desbloq ca]
+FROM $(vDirPainel)/EXTRACAO/BLOQ_CARTAO.QVD (QVD);
+
+//traz a informação do tipo de bloqueio de cartão
+LEFT JOIN (BLOQ_CARTAO)
+LOAD ID_TP_BLOQ_CARTAO,
+     [Descrição tp bloq cartão]
+FROM $(vDirPainel)/TRANSFORMACAO/TP_BLOQ_CARTAO.QVD (QVD);
+
+//traz informação da tabela DOMÍNIO
+LEFT JOIN (BLOQ_CARTAO)
+LOAD cd_dominio AS FL_LIBERADO_CA,
+	 vl_dominio AS [Bloq cartão liberado]
+FROM $(vDirPainel)/TRANSFORMACAO/DOMINIO.QVD (QVD)
+WHERE nm_dominio = 'FL_LIBERADO';
+
+STORE BLOQ_CARTAO INTO $(vDirPainel)/TRANSFORMACAO/BLOQ_CARTAO.QVD (QVD);
+DROP TABLE BLOQ_CARTAO;
+
+///$tab 6. Cartão
+
+CARTAO:
+LOAD id_cartao        AS ID_CARTAO,
+	 id_cliente       AS ID_CLIENTE,
+	 fl_status_cartao AS FL_STATUS_CARTAO,
+	 fl_cartao_atual  AS FL_CARTAO_ATUAL,
+	 fl_titularidade  AS FL_TITULARIDADE_CARTAO,
+	 nu_cartao        AS [No. cartão]
+FROM $(vDirPainel)/EXTRACAO/CARTAO.QVD (QVD);
+
+//traz informação do tipo de bloqueio do cartão
+LEFT JOIN (CARTAO)
+LOAD ID_CARTAO,
+     [Descrição tp bloq cartão]
+FROM $(vDirPainel)/TRANSFORMACAO/BLOQ_CARTAO.QVD (QVD)
+WHERE FL_LIBERADO_CA = 'N';
+
+//traz informações da tabela DOMÍNIO
+LEFT JOIN (CARTAO)
+LOAD cd_dominio AS FL_STATUS_CARTAO,
+	 vl_dominio AS [Situação cartão]
+FROM $(vDirPainel)/TRANSFORMACAO/DOMINIO.QVD (QVD)
+WHERE nm_dominio = 'FL_STATUS_CARTAO';
+
+LEFT JOIN (CARTAO)
+LOAD cd_dominio AS FL_CARTAO_ATUAL,
+	 vl_dominio AS [Cartão atual]
+FROM $(vDirPainel)/TRANSFORMACAO/DOMINIO.QVD (QVD)
+WHERE nm_dominio = 'FL_CARTAO_ATUAL';
+
+LEFT JOIN (CARTAO)
+LOAD cd_dominio AS FL_TITULARIDADE_CARTAO,
+	 vl_dominio AS [Titularidade cartão]
+FROM $(vDirPainel)/TRANSFORMACAO/DOMINIO.QVD (QVD)
+WHERE nm_dominio = 'FL_TITULARIDADE';
+
+STORE CARTAO INTO $(vDirPainel)/TRANSFORMACAO/CARTAO.QVD (QVD);
+DROP TABLE CARTAO;
+
+///$tab 7. Tipo bloqueio cliente
+
+TP_BLOQ_CLIENTE:
+LOAD id_tipo_bloqueio_cliente AS ID_TP_BLOQ_CLIENTE,
+	 ds_tipo_bloqueio_cliente AS [Descrição tp bloq cliente]
+FROM $(vDirPainel)/EXTRACAO/TP_BLOQ_CLIENTE.QVD (QVD);
+STORE TP_BLOQ_CLIENTE INTO $(vDirPainel)/TRANSFORMACAO/TP_BLOQ_CLIENTE.QVD (QVD);
+DROP TABLE TP_BLOQ_CLIENTE;
+
+///$tab 8. Bloqueio cliente
+
+BLOQ_CLIENTE:
+LOAD id_bloqueio_cliente      AS ID_BLOQ_CLIENTE,
+     id_tipo_bloqueio_cliente AS ID_TP_BLOQ_CLIENTE,
+	 id_cliente               AS ID_CLIENTE,
+	 fl_liberado              AS FL_LIBERADO_CL,
+	 dt_bloqueio              AS [Data bloq cl],
+	 dt_desbloqueio           AS [Data desbloq cl],     
+	 dt_vencimento_fatura     AS [Data vencimento fatura]
+FROM $(vDirPainel)/EXTRACAO/BLOQ_CLIENTE.QVD (QVD);
+
+LEFT JOIN (BLOQ_CLIENTE)
+LOAD ID_TP_BLOQ_CLIENTE,
+     [Descrição tp bloq cliente]
+RESIDENT TP_BLOQ_CLIENTE;
+
+DROP TABLE TP_BLOQ_CLIENTE;
+
+//traz informações da tabela DOMÍNIO
+LEFT JOIN (BLOQ_CLIENTE)
+LOAD cd_dominio AS FL_LIBERADO_CL,
+	 vl_dominio AS [Bloq cliente liberado]
+FROM $(vDirPainel)/TRANSFORMACAO/DOMINIO.QVD (QVD)
+WHERE nm_dominio = 'FL_LIBERADO';
+
+STORE BLOQ_CLIENTE INTO $(vDirPainel)/TRANSFORMACAO/BLOQ_CLIENTE.QVD (QVD);
+DROP TABLE BLOQ_CLIENTE;
+
+///$tab 9. Pagamento fatura
+
+PGT_FATURA:
+LOAD id_pagamento_fatura     AS ID_PGT_FATURA,
+	 id_fatura               AS ID_FATURA,
+	 id_cliente              AS ID_CLIENTE,
+	 id_rede                 AS ID_REDE,
+	 id_rede_cancelamento    AS ID_REDE_CANCELAMENTO,
+	 id_usuario              AS ID_USUARIO,
+	 id_usuario_cancelamento AS ID_USUARIO_CANCELAMENTO,
+	 fl_status_pagamento     AS FL_STATUS_PGT_FATURA,
+	 fl_meio_transacao       AS FL_MEIO_TRANSACAO,
+	 dt_pagamento            AS [Data pgt],
+	 dt_processamento        AS [Data processamento],
+	 vl_pagamento            AS [Valor pgt]
+FROM $(vDirPainel)/EXTRACAO/PGT_FATURA.QVD (QVD);
+
+//traz informações da tabela DOMÍNIO
+LEFT JOIN (PGT_FATURA)
+LOAD cd_dominio AS FL_STATUS_PGT_FATURA,
+	 vl_dominio AS [Situação pgt fatura]
+FROM $(vDirPainel)/TRANSFORMACAO/DOMINIO.QVD (QVD)
+WHERE nm_dominio = 'FL_STATUS_PAGAMENTO';
+
+STORE PGT_FATURA INTO $(vDirPainel)/TRANSFORMACAO/PGT_FATURA.QVD (QVD);
+DROP TABLE PGT_FATURA;
+
+///$tab 10. Rede
+
+REDE:
+LOAD id_rede     AS ID_REDE,
+	 nm_fantasia AS [Nome fantasia],
+	 nm_cidade   AS [Cidade rede],
+	 cd_uf       AS [UF rede]
+FROM $(vDirPainel)/EXTRACAO/REDE.QVD (QVD);
+STORE REDE INTO $(vDirPainel)/TRANSFORMACAO/REDE.QVD (QVD);
+DROP TABLE REDE;
+
+///$tab 11. Cliente
+
+//mapeia os clientes que estão presentes na tabela de VENDA, para sinalizar que já realizaram alguma compra
+Mapping
+MapContaAtivada:
+LOAD
+	DISTINCT ID_CLIENTE,
+    'SIM' AS Ativada
+FROM $(vDirPainel)/TRANSFORMACAO/VENDA.QVD (QVD);
+
+//mapeia a data dessa primeira compra
+Mapping
+MapAtivacao:
+LOAD
+     ID_CLIENTE,
+     DATE(DayStart(MIN([Data venda]))) AS [Data ativação]
+FROM $(vDirPainel)/TRANSFORMACAO/VENDA.QVD (QVD)
+GROUP BY ID_CLIENTE;
+
+//mapeia os clientes que realizaram compra nos últimos 90 dias da base
+Mapping
+MapComprouUlt90Dias:
+LOAD
+	DISTINCT ID_CLIENTE,
+    'SIM' AS [Comprou no último trimestre]
+FROM $(vDirPainel)/TRANSFORMACAO/VENDA.QVD (QVD)
+WHERE DATE(FLOOR([Data venda])) >= '$(vDatMaxVenda)'-90;
+
+//mapeia os clientes que foram bloqueados por fatura vencida, e qual a data
+Mapping
+MapVencimentoFatura:
+LOAD
+    ID_CLIENTE,
+    DATE(MAX([Data vencimento fatura])) AS [Data vencimento fatura]
+FROM $(vDirPainel)/TRANSFORMACAO/BLOQ_CLIENTE.QVD (QVD)
+WHERE MATCH(ID_TP_BLOQ_CLIENTE, 2,9) > 0
+GROUP BY ID_CLIENTE;
+
+CLIENTE:
+LOAD *,
+     Hash128([Data cadastro],[Data ativação])        AS %KeyCalendario, //chave para ligar com o calendário
+     REPLACE(CLASS(Idade, 5),'<= x <', ' a ')&'anos' AS [Faixa etária]; //cria uma coluna de faixa etária que vai de 5 em 5 anos
+     
+LOAD id_cliente                                       AS ID_CLIENTE,
+	 id_origem_comercial                              AS ID_REDE,
+	 id_usuario_cadastro                              AS ID_USUARIO_CADASTRO,
+	 id_escolaridade                                  AS ID_ESCOLARIDADE,
+	 id_estado_civil                                  AS ID_ESTADO_CIVIL,
+	 id_profissao                                     AS ID_PROFISSAO,
+	 id_ocupacao                                      AS ID_OCUPACAO,
+	 id_moradia                                       AS ID_MORADIA,
+	 nm_cliente                                       AS [Nome cliente],
+	 dt_nascimento                                    AS [Data nascimento],
+     Age(Today(),dt_nascimento)                       AS Idade, //calcula a idade atual do cliente a partir da data de nascimento
+	 fl_sexo                                          AS FL_SEXO,
+	 ds_email                                         AS Email,
+	 nm_cidade_natal                                  AS [Cidade natal],
+	 cd_uf_natal                                      AS [UF natal],
+	 nm_cidade                                        AS [Cidade cliente],
+	 cd_uf                                            AS [UF cliente],
+	 fl_titularidade                                  AS FL_TITULARIDADE_CLIENTE,
+	 fl_tipo_pessoa                                   AS FL_TIPO_PESSOA,
+	 fl_status_analise                                AS FL_STATUS_ANALISE,
+	 fl_status_conta                                  AS FL_STATUS_CONTA,
+     DATE(DayStart(dt_cadastro))                      AS [Data cadastro],
+     ApplyMap('MapContaAtivada',id_cliente,'NAO')     AS Ativada, //aplicação do mapeamento
+     ApplyMap('MapComprouUlt90Dias',id_cliente,'NAO') AS [Comprou no último trimestre], //aplicação do mapeamento
+     ApplyMap('MapAtivacao',id_cliente,NULL())        AS [Data ativação] //aplicação do mapeamento
+     
+     
+FROM $(vDirPainel)/EXTRACAO/CLIENTE.QVD (QVD);
+
+//informações da tabela de vendas
+
+LEFT JOIN (CLIENTE)
+LOAD ID_CLIENTE&'|'&TIMESTAMP(MAX([Data venda]),'ddMMyyyyHHmmssttt') AS ID_VENDA_2,
+     DATE(MAX(FLOOR([Data venda])))                                  AS [Data última venda],
+     SUM([Valor venda])                                              AS [Total gasto],
+     COUNT(ID_VENDA)                                                 AS [Total de compras],
+     ID_CLIENTE
+FROM $(vDirPainel)/TRANSFORMACAO/VENDA.QVD (QVD)
+GROUP BY ID_CLIENTE;
+
+LEFT JOIN (CLIENTE)
+LOAD ID_CLIENTE&'|'&TIMESTAMP([Data venda],'ddMMyyyyHHmmssttt') AS ID_VENDA_2,
+     [Valor principal venda]                                    AS [Valor última venda],
+     floor('$(vDatMaxVenda)'-[Data venda])+1                    AS [Dias desde última compra]
+FROM $(vDirPainel)/TRANSFORMACAO/VENDA.QVD (QVD);
+
+//informações de cartão
+
+LEFT JOIN (CLIENTE)
+LOAD ID_CLIENTE,
+     ID_CARTAO,
+     [Situação cartão],
+     [Descrição tp bloq cartão]
+FROM $(vDirPainel)/TRANSFORMACAO/CARTAO.QVD (QVD)
+WHERE FL_CARTAO_ATUAL = 'S';
+
+//informações de bloqueio do cliente
+
+LEFT JOIN (CLIENTE)
+LOAD *,
+     ID_CLIENTE&'|'&DATE(FLOOR([Data vencimento fatura])) AS ID_FATURA_ATRASO;
+
+LOAD ID_CLIENTE,
+     ID_TP_BLOQ_CLIENTE,
+     ApplyMap('MapVencimentoFatura', ID_CLIENTE) as [Data vencimento fatura]
+FROM $(vDirPainel)/TRANSFORMACAO/BLOQ_CLIENTE.QVD (QVD)
+WHERE FL_LIBERADO_CL = 'N';
+
+//informações de fatura
+
+LEFT JOIN (CLIENTE)
+LOAD ID_CLIENTE&'|'&DATE(FLOOR([Vencimento fatura])) AS ID_FATURA_ATRASO,
+     [Vencimento fatura],
+     [Valor fatura]
+FROM $(vDirPainel)/TRANSFORMACAO/FATURA.QVD (QVD);
+
+//informações de pagamento da fatura
+
+LEFT JOIN (CLIENTE)
+LOAD MAX(ID_PGT_FATURA) AS ID_ULTIMO_PGT,
+     ID_CLIENTE
+FROM $(vDirPainel)/TRANSFORMACAO/PGT_FATURA.QVD (QVD)
+WHERE   FL_MEIO_TRANSACAO <> 'C'
+GROUP BY ID_CLIENTE;
+
+LEFT JOIN (CLIENTE)
+LOAD DATE(FLOOR([Data pgt])) AS [Data último pagamento],
+     [Valor pgt]             AS [Valor último pagamento],
+     ID_PGT_FATURA           AS ID_ULTIMO_PGT
+FROM $(vDirPainel)/TRANSFORMACAO/PGT_FATURA.QVD (QVD);
+
+//informações de rede
+
+LEFT JOIN (CLIENTE)
+LOAD ID_REDE,
+     [Nome fantasia]
+FROM $(vDirPainel)/TRANSFORMACAO/REDE.QVD (QVD);
+
+//DOMÍNIO
+
+LEFT JOIN (CLIENTE)
+LOAD cd_dominio AS FL_SEXO,
+	 vl_dominio AS [Sexo]
+FROM $(vDirPainel)/TRANSFORMACAO/DOMINIO.QVD (QVD)
+WHERE nm_dominio = 'FL_SEXO';
+
+LEFT JOIN (CLIENTE)
+LOAD cd_dominio AS FL_TITULARIDADE_CLIENTE,
+	 vl_dominio AS [Titularidade cliente]
+FROM $(vDirPainel)/TRANSFORMACAO/DOMINIO.QVD (QVD)
+WHERE nm_dominio = 'FL_TITULARIDADE';
+
+LEFT JOIN (CLIENTE)
+LOAD cd_dominio AS FL_TIPO_PESSOA,
+	 vl_dominio AS [Tipo pessoa]
+FROM $(vDirPainel)/TRANSFORMACAO/DOMINIO.QVD (QVD)
+WHERE nm_dominio = 'FL_TIPO_PESSOA';
+
+LEFT JOIN (CLIENTE)
+LOAD cd_dominio AS FL_STATUS_ANALISE,
+	 vl_dominio AS [Situação análise]
+FROM $(vDirPainel)/TRANSFORMACAO/DOMINIO.QVD (QVD)
+WHERE nm_dominio = 'FL_STATUS_ANALISE';
+
+LEFT JOIN (CLIENTE)
+LOAD cd_dominio AS FL_STATUS_CONTA,
+	 vl_dominio AS [Situação conta]
+FROM $(vDirPainel)/TRANSFORMACAO/DOMINIO.QVD (QVD)
+WHERE nm_dominio = 'FL_STATUS_CONTA';
+
+STORE CLIENTE INTO $(vDirPainel)/TRANSFORMACAO/CLIENTE.QVD (QVD);
+DROP TABLE CLIENTE;
+
+///$tab 12. Calendário
+
+//criação de um calendário que utiliza duas datas para se ligar à fato
+DATA_AUX:
+LOAD [Data cadastro],
+     [Data ativação],
+     %KeyCalendario
+FROM $(vDirPainel)/TRANSFORMACAO/CLIENTE.QVD (QVD);
+
+CALENDARIO_AUX:
+LOAD [Data cadastro] AS DATA,
+     'CADASTRO'      AS TIPO_DATA,
+     %KeyCalendario
+RESIDENT DATA_AUX;
+
+Concatenate
+
+LOAD [Data ativação] AS DATA,
+     'ATIVACAO'      AS TIPO_DATA,
+     %KeyCalendario
+RESIDENT DATA_AUX;
+
+DROP TABLE DATA_AUX;
+
+NOCONCATENATE
+
+CALENDARIO:
+LOAD %KeyCalendario,
+	 Date(Floor(DATA))      AS Data, 
+	 Month(DATA)  		    AS [Mês],
+     Year(DATA)			    AS Ano,
+	 MonthName(DATA)	    AS [Mês/Ano],
+     DATE(MonthStart(DATA)) AS [Data Competência],
+     ceil(month(DATA)/3)    AS Trimestre,
+     TIPO_DATA
+RESIDENT CALENDARIO_AUX;
+
+DROP TABLE CALENDARIO_AUX;
+
+STORE CALENDARIO INTO $(vDirPainel)/TRANSFORMACAO/CALENDARIO.QVD (QVD);
+DROP TABLE CALENDARIO;
